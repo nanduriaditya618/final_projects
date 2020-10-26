@@ -1,0 +1,98 @@
+---
+title: "FinalprojectDS710_Aditya_Nanduri"
+author: "Aditya"
+date: "5/4/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+library(dplyr)
+library(readr)
+library(ggformula)
+```
+
+```{r}
+# Read CSV files into R 
+trump_df = read_csv("Trumprelatedtweets05052020_2.csv")
+biden_df = read_csv("Bidenrelatedtweets05052020_2.csv")
+
+```
+
+```{r}
+# get summary of Trump tweets
+summary(trump_df)
+```
+
+
+```{r}
+# get summary of Bdien tweets
+summary(biden_df)
+```
+```{r}
+# Plot Sentiment scores of Biden vs Trump - This will show graphically who has better scores
+finaldf <- rbind(trump_df,biden_df)
+gf_boxplot(finaldf$polarity ~ finaldf$candidate, data = finaldf)
+```
+***HYPOTHESIS***
+
+-The Null Hypothesis H0: Mean(sentiment score of trump) <= Mean(sentiment score of Biden)
+- The alternate Hypothesis Ha: Mean(sentiment score of trump) > Mean(sentiment score of Biden)
+
+
+```{r}
+# Get individual scores of Trump and Biden to run a T-Test
+trump_scores = trump_df$polarity
+biden_scores = biden_df$polarity
+```
+
+```{r}
+t.test(trump_scores,biden_scores, alternative = "greater")
+
+```
+***CONCLUSION*** At Alpha value .01 there is no enough evidence to reject null hypothesis. So, Biden has better sentiment than Trump
+
+```{r}
+# Bar Charts of Number of Positive vs Negative vs Neutral tweets for both the candidates
+gf_bar(~ attitude,fill =~candidate,position = position_dodge(),data = finaldf )
+```
+
+```{r}
+# scatter plots of Retweets vs Favorite counts of all Negative Tweets
+finaldf_negative <- subset(finaldf,finaldf$attitude == "Negative")
+negativeplot <- ggplot(finaldf_negative, aes(x = retweet_count, y = favorite_count)) + geom_point(aes(color = candidate))
+print(negativeplot + ggtitle("Negative Tweets: Retweet vs Favorite Counts"))
+```
+
+```{r}
+# scatter plots of Retweets vs Favorite counts of all Positive Tweets
+finaldf_positive <- subset(finaldf,finaldf$attitude == "Positive")
+positiveplot <- ggplot(finaldf_positive, aes(x = retweet_count, y = favorite_count)) + geom_point(aes(color = candidate))
+print(positiveplot + ggtitle("Positive Tweets: Retweet vs Favorite Counts"))
+```
+
+```{r}
+# scatter plots of Retweets vs Favorite counts of all Neutral Tweets
+finaldf_Neutral <- subset(finaldf,finaldf$attitude == "Neutral")
+Neutralplot <- ggplot(finaldf_Neutral, aes(x = retweet_count, y = favorite_count)) + geom_point(aes(color = candidate))
+print(Neutralplot + ggtitle("Neutral Tweets: Retweet vs Favorite Counts"))
+```
+
+You can also embed plots, for example:
+
+```{r}
+# scatter plots of Retweets vs Favorite counts of all  Tweets
+Allplot <- ggplot(finaldf, aes(x = retweet_count, y = favorite_count)) + geom_point(aes(color = candidate))
+print(Allplot + ggtitle("All Tweets: Retweet vs Favorite Counts"))
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

@@ -1,0 +1,185 @@
+---
+title: "Finalproject_DS700_Nanduri_aditya"
+author: "Aditya"
+date: "4/29/2020"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Read in dataset file
+
+```{r}
+library(readr)
+library(dplyr)
+library(mice)
+library(VIM)
+require(forecast)
+```
+***In Excel we have done cleaning part (removal of non numeric values and outliers) and Calculations mentioned in explanation document.***
+*****In this R document we will impute missing values and create models and then compare them*****
+
+```{r}
+abbeville = (read_csv("Dataset-cleaneddata.csv"))
+# what's in the data
+summary(abbeville)
+```
+Before we start any furether analysis , lets do a quick plot to check for any outliers
+```{r}
+
+plot(abbeville[c(2,1)])
+
+# 2008 shows an outlier but in document it was mentioned that HC received an unusually large n umber of requests since neighboring   New Orleans HC was closed due to hurricane.This will skew forecast accuracy. So, I am removing it and imputing this value as well.
+```
+```{r}
+#removing 2008 oct data point
+abbeville[which(abbeville[ ,2] == '2008' & abbevillenew[ ,3] == '10' ),1] <- NA
+```
+
+```{r}
+# Lets get a better understanding of the pattern of missing data
+md.pattern(abbeville)
+# output of above statement tells us that 86 samples are complete and 11 have missing values that too in Infcoming examination column
+aggr_plot <- aggr(abbeville, col=c('navyblue','red'), numbers=TRUE, sortVars=TRUE, labels=names(abbeville), cex.axis=.7, gap=3, ylab=c("Histogram of missing data","Pattern"))
+# above statement gives better visualization about missing data that 89% of data is available
+```
+
+```{r}
+
+# changing column name as imputation function wont work if there is space in column name
+colnames(abbeville)[which(names(abbeville) == "Incoming Examinations")] <- "Incoming_Examinations"
+#Imputing the missing data, using predictive mean matching imputation method
+tempdata = mice(abbeville, m =5, method = 'pmm', maxit = 5, seed=500)
+
+```
+
+```{r}
+summary(tempdata)
+tempdata$imp$Incoming_Examinations
+abbevillenew <- complete(tempdata,1)# make a new data set with cleaned and imputed values
+
+```
+
+```{r}
+# calculating Dec 2009-Feb 2010 data
+# Total number of cases from Dec 2009 - Feb 2010 is 5129
+# Calculate what percentage of cases in Dec 2008 is sum of (Dec 2008,Jan 2009, Feb 2010) - W1
+# Calculate what percentage of cases in Jan 2009 is sum of (Dec 2008,Jan 2009, Feb 2010) - W2
+# Calculate what percentage of cases in Feb 2009 is sum of (Dec 2008,Jan 2009, Feb 2010) - W3
+# Finally calculate Dec 2009 as W1 * 5129, similarly Jan 2010 as W2 * 5129 ans Feb 2010 as W3 * 5129
+# with this approach I belive would preserve trend and seasonality
+
+
+Dec2008.rows = which(abbevillenew[ ,2] == '2008' & abbevillenew[ ,3] == '12' )
+Dec2008 = abbevillenew[Dec2008.rows, 1]
+Jan2009.rows = which(abbevillenew[ ,2] == '2009' & abbevillenew[ ,3] == '1' )
+Jan2009 = abbevillenew[Jan2009.rows, 1]
+Feb2009.rows = which(abbevillenew[ ,2] == '2009' & abbevillenew[ ,3] == '2' )
+Feb2009 = abbevillenew[Feb2009.rows, 1]
+W1 = Dec2008 / sum(Dec2008 + Jan2009 + Feb2009 )
+W2 = Jan2009 / sum(Dec2008 + Jan2009 + Feb2009 )
+W3 = Feb2009 / sum(Dec2008 + Jan2009 + Feb2009 )
+
+abbevillenew[which(abbevillenew[ ,2] == '2009' & abbevillenew[ ,3] == '12' ),1] <- round(W1 * 5129)
+abbevillenew[which(abbevillenew[ ,2] == '2010' & abbevillenew[ ,3] == '1' ),1] <- round(W2 * 5129)
+abbevillenew[which(abbevillenew[ ,2] == '2010' & abbevillenew[ ,3] == '2' ),1] <- round(W3 * 5129)
+```
+
+```{r}
+write.csv(abbevillenew, "Abbeville_Cleansed_imputed.csv")
+```
+
+```{r}
+finaldata = read.csv("Abbeville_Cleansed_imputed.csv")
+plot(finaldata[ ,2], ylab = "Heart Exams", xlab = "Index", main ="Scatterplot of Heart Exams")
+```
+
+```{r}
+# Build a time series from data and  view Trend and seasonality
+finaldata_ts = ts(finaldata[ ,2], start=2006, frequency=12)
+plot(finaldata_ts, ylab = "Heart Exams", xlab = "Years", main = "Time Series Plot of Heart Exams")
+
+```
+
+```{r}
+# To decide on whch model to use we need to look at seasonality and trend seperately
+plot(decompose(finaldata_ts))
+# From the plot we understand that there is additive seasonality and additive trend ( upward linear trend with additive seasonality)
+```
+
+***when do we used which type of model***
+***When there is no trend and no seasonality  we use Moving average, Simple exponential smoothing***
+***When there is a trend and seasonality we use  arima(after looking for auto regression) and Holt's winter exponential smoothing***
+```{r}
+# Holt-Winters Expotential Smoothing with trending - Training model
+finaldata_hw = HoltWinters(finaldata_ts, gamma = FALSE)
+
+# Holt-Winters Forecasting for 2014 
+finaldata_hw_forecast = forecast(finaldata_hw, h=12)
+plot(finaldata_hw)
+
+```
+
+```{r}
+plot(finaldata_hw_forecast, ylab = "Heart Exams", xlab = "Years")
+
+```
+ Holt-Winters model, including the 80% (dark gray) and 95% (light gray) confidence intervals (CI)
+```{r}
+summary(finaldata_hw_forecast)
+#RSME : 313.4226
+#MAPE : 15.90158
+```
+
+```{r}
+# Correlation plots - not stationary - confirms trend
+acf(finaldata_ts) # autoregression present, large spike at initial that decays towards 0 is autoregressive
+pacf(finaldata_ts) # autoregressive and moving average, large spike in 1st 2 variables that decays to 0 is MA
+```
+
+```{r}
+# Diffing to transform data to account for October 2008 spike in data
+# This will fix time series with trends or drift
+# Optimal number for diffing
+ndiffs(finaldata_ts)
+
+# Plot with diffing
+plot(diff(finaldata_ts,1))
+# optimal diffing is 1
+```
+
+```{r}
+# Fit ARIMA model - let R decide best model
+final.arima = auto.arima(finaldata_ts)
+final.arima
+#fitted model
+fit = final.arima$fitted
+# plot of fit
+plot(finaldata_ts, ylab = "Heart Exams", xlab = "Years", main = "Time Series Plot of Heart Exams")
+lines(fit, col='red')
+```
+
+```{r}
+# Plot residuals in acf and pacf - look vs bounds
+acf(final.arima$residuals)
+pacf(final.arima$residuals)
+```
+
+```{r}
+# ARIMA Forecast for next 12 months
+hc.arima.forecast = forecast(final.arima, h=12)
+plot(hc.arima.forecast,ylab = "Heart Exams", xlab = "Years")
+summary(hc.arima.forecast)
+#RSME : 303.3947
+#MAPE : 15.12695
+```
+ARIMA generated forecast with 80% and 95% CI
+
+```{r}
+
+```
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

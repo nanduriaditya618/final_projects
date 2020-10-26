@@ -1,0 +1,495 @@
+---
+title: "Predicting Loan Defaults with Logistic Regression"
+author: "Aditya Nanduri"
+date: "8/07/2020"
+output: word_document
+---
+***Executive Summary***
+
+This report provides statistical analysis, building and evaluation of plausible logistic regression model to predict which applicants are likely to default on their loans thereby reducing risk and inreasing profits.
+
+Methods of analysis include trends, transformation of data, process of finding best logistic model, finding optimal classification threshold to predict the loan status accurately based on the loan application and also predicting profit for the bank based on the suggested model. All details are included in following sections.
+
+Evaluation of best plausible logistic regression model shows an accuracy of 79.03% at proposed threshold value of 0.5 with predicted profit of 2,251,161. This is predicted profit when bank denies all of the loans that current model predicts as “bad” and approves all loans that current model predicts as "Good".At this threshold value, percentage of actually bad loans that are predicted as bad is 11.34% and percentage of actually good loans that are predicted as good is 97.51%.  For the same model ,predicted profit can be maximised upto  3,477,319 by compromising with model accuracy. In other words at threshold 0.72 accuracy of model is 72.67% which is slightly lower than at threshold 0.5, but profit is increased significantly.
+
+In conclusion we have found a best plausible logistic regression model for predicting Loan Defaults . Recommendations and possible outcomes are given below:
+1. Logistic regression model at 0.5 threshold will have an accuracy of 79.03% and profit of 2,251,161 which is *89%* increase in profit compared to current profit.
+2. Logistic regression model at 0.72 threshold will have an accuracy of 72.67% and profit of 3,477,319 which is *189%* increase in profit compared to current profit.
+Decision has to be taken to make a trade off between accuracy and profit.
+
+Suggested model has some limitations which include:
+
+1.Trends in data keep changing and data model needs to be updated periodically.
+
+2.This model is valid for given variables.If there is any addition of new variable new logistic regression model needs to be built following below process.
+
+
+***PART 1***
+
+***1.2 Introduction***
+
+            The data set contains customer's personal information about their loan status (fully paid off their loans, current on their payments, in grace period, late , and in collection) along with many other variables like employement, Interest rates,income etc.. There are 50,000 records with 30 variables in the file. The data set contains numeric and categorical variables and some values are missing (N/A). The purpose of this project is to use logistic regression to predict which applicants are likely to default on their loans.
+
+
+***1.3 Preparing and Cleaning the data***
+
+Loading packages,reading data and storing it in the variable called "bankloan".
+
+```{r message=FALSE}
+
+library(readr)
+library(corrplot)
+bankloan = read_csv("loans50k.csv")
+
+```
+
+**Preparing new the response variable and remove unwanted loan's statuses**
+
+Since the response variable has unwanted data, we are removing the unwanted loan statuses to create a new dataset "bankloan1". We will retain only 2 categories and convert the 'Fully Paid' as 'Good', and 'Charged Off' and 'Default' as 'Bad' for the sake of our analysis and remove default value of NA in loan statuses.
+
+```{r}
+#Create a new status variable with 2 levels good or Bad debts
+bankloan$status <- as.factor(bankloan$status)
+levels(bankloan$status) <- list('Good'=c('Fully Paid'),'Bad'=c('Charged Off','Default'))
+bankloan <- bankloan[!is.na(bankloan$status),] # to remove unnecessary loan's statuses
+
+```
+
+
+**Eliminate redundant variables**:
+Varibles with high cardinality and/or those which adds no meaning to data and should be removed to get an efficient model.
+
+Variables such as names, ID's are removed from the dataset while cleaning the data since they usually have high number of unique values. This is not preferrable while training the model.
+
+Hence, we are removing the variables that have high cardinality from the data.
+
+```{r}
+#eleminating below variables
+bankloan$state <- NULL # to many distinct values/high cardinality and doesnt add any value to data
+bankloan$loanID <- NULL # to many distinct values/high cardinality and doesnt add any value to data
+bankloan$employment <- NULL # to many distinct values/high cardinality and cannot be consolidated as well
+#bankloan1$totalPaid <- NULL # because it is information that cannot be known before the loan is issue
+bankloan[bankloan == "n/a"] <- NA
+#
+```
+
+**Missing value**
+
+For now we are removing all missing value rows since percentage of missing values for each category is less than or equal to 6%.
+
+However we will reconsider this step once we build the model and calculate the accuracy, before and after imputating missing values. If Imputation improves accuracy then we will impute values, if not, we will just omit them from the data.
+
+
+```{r}
+# To calculate the % missing values in each variable
+MissingValues <- function(x){round(sum(is.na(x))/length(x)*100,4)} # to calculate percent of missing data for each variable
+apply(bankloan,2,MissingValues)
+```
+
+Note: Since imputing values does not improve the model, we will not consider imputation of data.
+
+```{r}
+# Deleting the values where there is NA.
+bankloan <- na.omit(bankloan)
+bankloan$length <- as.factor(bankloan$length)
+```
+
+**Feature Engineering in Categorical Variables:** 
+Consolidating Variables with high cardinality categorical variables
+
+Among all the categorical variables (after removing state and employment), Length(length of employement) and reason are the only 2 categories with high cardinality. We need to reduce the categories in each variable as this would better train and fit the data more accurately.
+Below would be new categories for Length
+1-3 years - '1 year','2 years','3 years'
+4-6 years - '4 years','5 years','6 years'
+7-9 years - '7 years','8 years','9 years'
+10+ years - '10+ years'
+
+Similarly for reason
+car   - car
+other - vacation,medical,moving,wedding
+home_improvement - renewable_energy, home_improvement
+credit_card - credit_card
+debt_consolidation - debt_consolidation
+small_business - small_business
+house - house
+```{r echo=FALSE}
+bankloan$length <- as.factor(bankloan$length)
+levels(bankloan$length) <- list('0-3 years'=c('1 year','< 1 year','2 years','3 years'), '4-6 years'=c('4 years','5 years','6 years'), '7-9 years'=c('7 years','8 years','9 years'), '10+ years' = c('10+ years'))
+
+
+bankloan$reason <- as.factor(bankloan$reason)
+levels(bankloan$reason) <- list('major_purchase'=c('car'), 'other'=c('vacation','medical','moving','wedding','other'), 'home_improvement'=c('renewable_energy','home_improvement'), 'credit_card'=c('credit_card'), 'debt_consolidation' = c('debt_consolidation'), 'small_business' = c('small_business'), 'house' = c('house'))
+
+bankloan$status <- as.character(bankloan$status)
+bankloan$reason <- as.character(bankloan$reason)
+
+```
+
+**Feature Engineering in Numerical value**
+
+For numerical data, reducing the number of redundant numerical variable by calculating correlation among other numerical variable will greatly help increasing Logistic regression model accuracy.
+
+Hence, we are separating out the numerical variables for convenience sake, into another dataframe and calculate the correlation matrix for this data.
+
+It is evident from the below graph that there are very clear high correlations exist within the data.
+
+```{r cho=FALSE}
+
+bankloan1_numeric_col <- bankloan[ ,c("amount","rate","payment","income","debtIncRat","delinq2yr","inq6mth","openAcc","pubRec","revolRatio",
+                                      "totalAcc","totalBal","totalRevLim","accOpen24","avgBal","bcOpen","bcRatio","totalLim","totalRevBal",
+                                      "totalBcLim","totalIlLim")]
+
+
+# calculate correlation matrix
+correlationMatrix <- cor(bankloan1_numeric_col)
+#print(correlationMatrix)
+corrplot::corrplot(correlationMatrix , method="circle", type = "upper",tl.col="black", title="Correlation Plot",mar=c(0,0,1,0))
+ 
+
+
+```
+
+The variables with very strong correlations are : 
+
+1.amount to payment - correlation 0.95
+2.Total current balance of all credit accounts(totalBal) to total credit limits(totalLim) correlation 0.99
+3.Total credit balance except mortgage(totalrevbal) to total of credit limits for installment accounts(totaliLim) - correlation 0.886
+4.Total current balance of all credit accounts(totalBal) to Average balance (avgbal) correlation 0.84
+
+These columns are deleted from the main dataset we have been using.
+
+```{r}
+bankloan$payment <- NULL # removing redundant variable
+bankloan$totalIlLim <- NULL # removing redundant variable
+bankloan$totalLim <- NULL # removing redundant variable
+bankloan$avgbal<-NULL
+```
+
+***1.4 Exploring and Transforming the data***
+
+Exploratory analysis is a crucial part of model building. When we look at the association of response variable with other fields, it is easier to understand the underlying relationships that can drive the model building and inferences from the results.
+
+A few plots to explore are as below:
+
+A. Bar plot of Status vs Grade
+We can see that Grade A, B and C have more Good statuses than Bad. And there seems to be a relationship between the frequency and Bad statuses as well. As the number increases, the % of Bad statuses also increased.
+
+B. Bar plot of Status vs Term:
+We can see that loans with shorter term have more good Loans than bad loans
+
+```{r}
+#graphs to explore the relationships between the Categorical variables and loan status
+counts <- table(bankloan$status, bankloan$grade)
+counts1 <- table(bankloan$status, bankloan$term)
+par(mfrow = c(1,2) )
+barplot(counts, main="Barplot of Status vs Grade",
+  xlab="Grade", col=c("blue","red"),
+  legend = rownames(counts), beside=TRUE)
+barplot(counts1, main="Barplot of Status vs length",
+  xlab="term", col=c("blue","red"),
+  legend = rownames(counts1), beside=TRUE)
+ 
+```
+**Graphs and Transformation**
+
+By looking at the distributions of the predictor variables we can see skewness in data.
+
+Skewed predictor variables is likely to have extreme values that can greatly influence the resulting model and this(skewness) has to be eliminated.
+
+Bloxplots are one of the ways we can see the outliers and by looking at the spread of the data through interquartile range.
+Clearly, income field has extremely skewed data.
+
+To eliminate this skewness, we will use logarithamic transformation to transform the data.
+
+Given below, boxplots of Income and totalRevLim variables before and after Transformation.
+
+```{r}
+#graphs to explore the relationships between the nuemrical variables and loan status
+par(mfrow = c(1,2) )
+boxplot(bankloan$income~bankloan$status,data=bankloan, main="Income before transformation",
+   xlab="status", ylab="predictor variable")
+# since income variable is very much skewed we are applying log transformation to reduce skewness.
+boxplot(log(bankloan$income)~bankloan$status,data=bankloan, main="Income after transformation ",
+   xlab="status", ylab="predictor variable")
+bankloan$income <- log(bankloan$income)
+
+```
+
+
+
+***SECTION 5 -  The Logistic Model***
+
+Creating two datasets from cleaned and prepared data. 
+Randomly choosing 80% of the cases and making it into a “training” dataset that will be used to build logistic regression models and the remaining 20% of the cases as “test” or “validation” dataset. This the test dataset will be used along with model and predict() to generate predicted statuses for each loan and to analyze the performance (accuracy) of model.
+
+```{r}
+SampleSize <- floor(0.80 * nrow(bankloan)) # 80% of the sample size
+set.seed(123)   #  set seed to ensure you always have same random numbers generated
+trainData <- sample(seq_len(nrow(bankloan)), size = SampleSize)
+TrainData <- bankloan[trainData, ]
+TrainData$totalPaid <- NULL # to remove totalPaid column
+TestData <- bankloan[-trainData, ]
+
+TrainData$status <- as.factor(TrainData$status) # convert to factor variable
+```
+
+***Finding Best Model*** 
+
+  In process of finding a best model ,first Let’s fit the full model using all of our predictors on training data to predict the loan status as well as produce the contingency table with a threshold of 0.5 on our test data set.Then we will use automatic model selection process (Step method) and compare accuracy and AIC values among the models suggested to find Best model. 
+  
+ 
+```{r}
+# FULL MODEL
+full<- glm(status ~ .,data = TrainData, family = 'binomial') # fit full model for glm
+predprob <- predict(full, newdata = TestData, type = "response") # to do prediction
+threshhold <- 0.5 # to set threshhold of 0.5
+prediction <- cut(predprob, breaks=c(-Inf, threshhold, Inf), labels=c("Bad", "Good"), header = TRUE)
+cTab <- table(TestData$status, prediction) # make confusion matrix
+addmargins(cTab)
+p_full <- round(sum(diag(cTab)) / sum(cTab)*100 ,2) # to calculate model prediction percent
+p_full
+extractAIC(full)
+```
+A
+ccuracy for Full model is 78.97 %. We will proceed with automatic model selection to find best model and compare the results.
+
+***Improved Model and Diagnostics***
+
+When using the **step** function with forward selection, below model is suggested.
+
+finalmodel_fwd <- glm(formula = status ~ grade + term + avgBal + debtIncRat + accOpen24 + 
+    totalAcc + home + delinq2yr + bcOpen + amount + income + 
+    inq6mth + revolRatio + totalBcLim + reason + openAcc + verified + 
+    totalRevLim)
+
+Contingency table for this model is given below.
+
+```{r echo=FALSE}
+#BEST FORWARD Model
+finalmodel_fwd <- glm(formula = status ~ grade + term + avgBal + debtIncRat + accOpen24 + 
+    totalAcc + home + delinq2yr + bcOpen + amount + income + 
+    inq6mth + revolRatio + totalBcLim + reason + openAcc + verified + 
+    totalRevLim, family = "binomial", data = TrainData)
+
+predictTrain1 = predict(finalmodel_fwd,newdata = TestData, type="response")
+
+threshhold <- 0.5  # to set threshhold of 0.5
+prediction1 <- cut(predictTrain1, breaks=c(-Inf, threshhold, Inf), labels=c('Bad', 'Good'), header = TRUE)
+cTab1 <- table(TestData$status, prediction1) # make confusion matrix
+addmargins(cTab1)
+p_fwd <- round(sum(diag(cTab1)) / sum(cTab1)*100 ,2) # to calculate model prediction percent
+p_fwd
+
+```
+This model has an AIC of 24276 and accuracy (at threshold of 0.5) of 79.03% for this best forward model, which is slightly higher than Full model.
+
+When Using the **step** function with backward selection , below model is suggested.
+
+finalmodel_back<- glm(formula = status ~ amount + term + grade + home + income + 
+    verified + reason + debtIncRat + delinq2yr + inq6mth + openAcc + 
+    revolRatio + totalAcc + totalRevLim + accOpen24 + avgBal + 
+    totalBcLim)
+
+Contingency table for this model is given below.
+
+```{r echo=FALSE}
+#Best Backaward model
+finalmodel_back<- glm(formula = status ~ amount + term + grade + home + income + 
+    verified + reason + debtIncRat + delinq2yr + inq6mth + openAcc + 
+    revolRatio + totalAcc + totalRevLim + accOpen24 + avgBal + 
+    totalBcLim, family = "binomial", data = TrainData)
+
+
+predictTrain2 = predict(finalmodel_back,newdata = TestData, type="response")
+threshhold <- 0.5  # to set threshhold of 0.5
+prediction2 <- cut(predictTrain2, breaks=c(-Inf, threshhold, Inf), labels=c('Bad', 'Good'), header = TRUE)
+cTab2 <- table(TestData$status, prediction2) # mak
+addmargins(cTab2)
+p_back <- round(sum(diag(cTab2)) / sum(cTab2)*100 ,2) # to calculate model prediction percent
+p_back
+
+```
+Model  AIC is 24274 and  accuracy (at threshold of 0.5) is 79.03 % for this best backward model.
+
+when using step() to look for the best model containing up to any two-way interaction terms, below is the model suggested:
+
+finalmodel_interaction <- glm(formula = status ~ amount + term + grade + home + income + 
+    verified + reason + debtIncRat + delinq2yr + inq6mth + openAcc + 
+    revolRatio + totalAcc + totalRevLim + accOpen24 + avgBal + 
+    totalBcLim + verified:totalRevLim + term:avgBal + openAcc:accOpen24 + 
+    openAcc:totalAcc + amount:avgBal + amount:home + amount:delinq2yr + 
+    delinq2yr:openAcc + reason:revolRatio + inq6mth:avgBal + 
+    debtIncRat:accOpen24 + verified:accOpen24 + openAcc:totalRevLim + 
+    income:totalAcc + income:accOpen24 + reason:debtIncRat + 
+    debtIncRat:totalAcc + debtIncRat:totalBcLim + income:delinq2yr + 
+    revolRatio:totalAcc + amount:revolRatio + amount:openAcc + 
+    grade:avgBal + verified:debtIncRat + inq6mth:totalBcLim + 
+    income:inq6mth + home:debtIncRat + debtIncRat:avgBal + avgBal:totalBcLim)
+
+Contingency table for this model is given below.
+
+```{r echo=FALSE}
+finalmodel_interaction <- glm(formula = status ~ amount + term + grade + home + income + 
+    verified + reason + debtIncRat + delinq2yr + inq6mth + openAcc + 
+    revolRatio + totalAcc + totalRevLim + accOpen24 + avgBal + 
+    totalBcLim + verified:totalRevLim + term:avgBal + openAcc:accOpen24 + 
+    openAcc:totalAcc + amount:avgBal + amount:home + amount:delinq2yr + 
+    delinq2yr:openAcc + reason:revolRatio + inq6mth:avgBal + 
+    debtIncRat:accOpen24 + verified:accOpen24 + openAcc:totalRevLim + 
+    income:totalAcc + income:accOpen24 + reason:debtIncRat + 
+    debtIncRat:totalAcc + debtIncRat:totalBcLim + income:delinq2yr + 
+    revolRatio:totalAcc + amount:revolRatio + amount:openAcc + 
+    grade:avgBal + verified:debtIncRat + inq6mth:totalBcLim + 
+    income:inq6mth + home:debtIncRat + debtIncRat:avgBal + avgBal:totalBcLim, 
+    family = "binomial", data = TrainData)
+
+
+predictTrain4 = predict(finalmodel_interaction,newdata = TestData, type="response")
+threshhold <- 0.5  # to set threshhold of 0.5
+prediction4 <- cut(predictTrain4, breaks=c(-Inf, threshhold, Inf), labels=c('Bad', 'Good'), header = TRUE)
+cTab4 <- table(TestData$status, prediction4) # mak
+addmargins(cTab4)
+p_int <- round(sum(diag(cTab4)) / sum(cTab4)*100 ,2) # to calculate model prediction percent
+p_int
+extractAIC(finalmodel_interaction)
+```
+
+Accuracy for this two way interaction model is 78.97 % and an AIC of 24140.3.
+
+***Based on Model accuracy and AIC values,  best model is the model generated from backward step function***
+```{r echo=FALSE}
+#Best of all models
+finalmodel_back<- glm(formula = status ~ amount + term + grade + home + income + 
+    verified + reason + debtIncRat + delinq2yr + inq6mth + openAcc + 
+    revolRatio + totalAcc + totalRevLim + accOpen24 + avgBal + 
+    totalBcLim, family = "binomial", data = TrainData)
+
+
+predictTrain2 = predict(finalmodel_back,newdata = TestData, type="response")
+threshhold <- 0.5  # to set threshhold of 0.5
+prediction2 <- cut(predictTrain2, breaks=c(-Inf, threshhold, Inf), labels=c('Bad', 'Good'), header = TRUE)
+cTab2 <- table(TestData$status, prediction2) # mak
+addmargins(cTab2)
+p_back <- round(sum(diag(cTab2)) / sum(cTab2)*100 ,2) # to calculate model prediction percent
+bad <- round(diag(cTab2)[1]*100/(diag(cTab2)[1]+(cTab2)[3]),2) # percentage of actually bad loans that are predicted as bad.
+good <- round((cTab2)[4]*100/((cTab2)[2]+(cTab2)[4]),2) #percentage of actually good loans that are predicted as good
+
+p_back
+bad
+good
+
+```
+
+Over all model prediction accuracy is 79.03%, percentage of bad loans that are predicted as bad is 11.34% and percentage of good loans that are predicted as good is 97.51%.
+
+***This is the best possible model with highest accuracy***
+
+***Section 6 - “Optimizing the Threshold for Accuracy*** 
+
+By varying the classification threshold from 0 to 1, we can find an optimum threshold where accuracy is very good. Below, we investigate how changing the threshold affects the model predictions when applied to the test data.
+
+
+```{r}
+trld <- 0  # to set threshhold of 0.5\
+df1<-NULL
+while (trld < 1) {
+
+
+prediction3 <- cut(predictTrain2, breaks=c(-Inf, trld, Inf), labels=c('Bad', 'Good'), header = TRUE)
+cTab3 <- table(TestData$status, prediction3) # mak
+addmargins(cTab3)
+
+p <- round(sum(diag(cTab3)) / sum(cTab3)*100 ,2) # to calculate model prediction percent
+df1<-rbind(df1,data.frame(trld,p))
+trld<-trld+0.02
+}
+
+
+plot(df1$trld,df1$p,type = "l", col = "red", xlab = "Threshold", ylab = "Percentage of Accuracy",
+   main = "Threshold vs Accuracy percentage")
+addmargins(cTab2)
+```
+ From the plot above, we can determine that at 0.5 of threshold value, the accuracy is at its maximum of ***79.03%***. At this threshold value, percentage of actually bad loans that are predicted as bad is 11.34% and percentage of actually good loans that are predicted as good: 97.51%.
+
+
+
+```{r}
+TestData$profit <- TestData$totalPaid - TestData$amount
+prediction2 <- as.data.frame(prediction2)
+TestData <- cbind(TestData,prediction2)
+ 
+```
+
+```{r}
+profitGood <- TestData$profit[TestData$prediction2 == "Good"]
+sumprofitgood <- round(sum(profitGood),0)
+sumprofittotal <- round(sum(TestData$profit),0)
+ 
+
+ 
+print(paste('The predicted profit is $',sumprofitgood, 'and the original loans profit is $',sumprofittotal))
+```
+
+Profit also can be improved significantly at this accuracy . Assuming the bank denies all of the loans that current model predicts as “bad”(at 0.5 threshold) and approves all loans that current model predicts as "Good" , the total profit would be $2,251,161 $. and original profit (when all the loans are approved) is $1,202,020. However, threshold can be improved a little more resulting in a more profit for the bank.
+
+
+***Section 7 - Optimizing the Threshold for Profit***
+
+Lets investigate, how changing the classification threshold effects the total profit . In this process we can find an optimum threshold where profit is maximum. Below graph gives variation in profit with threshold value:
+
+```{r}
+thres <- 0  # to start with threshhold of 0
+
+df2<-NULL
+while (thres < 1) {
+prediction2 <- cut(predictTrain2, breaks=c(-Inf, thres, Inf), labels=c('Bad', 'Good'), header = TRUE)
+profit = sum( TestData$totalPaid[ prediction2 == 'Good'] - TestData$amount[ prediction2 == 'Good'] )
+df2<-rbind(df2,data.frame(thres,profit))
+thres<-thres+0.01
+
+}
+plot(df2$thres,df2$profit,type = "l", col = "red", xlab = "Threshold", ylab = "Profit",
+   main = "Threshold vs Profit")
+```
+
+We get Maximum profit of $3,477,319.0 at threshold of 0.72 assuming all bad loans are rejected and all good ones are approved.
+
+Compared to not using my model, maximum percentage increase in profit that can be expected by deploying my model is 189.3%
+(3477319-1202020)*100/1202020
+
+Perfect model (with maximum accuracy at 0.5 threshold) predicts profit of 2,251,161.00 and Maximum Profit (at 0.72 threshold) is 3,477,319.00 
+
+```{r echo=FALSE}
+predictTrain_final = predict(finalmodel_back,newdata = TestData, type="response")
+threshhold_final <- 0.72  
+prediction_final <- cut(predictTrain_final, breaks=c(-Inf, threshhold_final, Inf), labels=c('Bad', 'Good'), header = TRUE)
+cTab_final <- table(TestData$status, prediction_final) # mak
+addmargins(cTab_final)
+p_back_final <- round(sum(diag(cTab_final)) / sum(cTab_final)*100 ,2) # to calculate model prediction percent
+bad_final <- round(diag(cTab_final)[1]*100/(diag(cTab_final)[1]+(cTab_final)[3]),2) # percentage of actually bad loans that are predicted as bad.
+good_final <- round((cTab_final)[4]*100/((cTab_final)[2]+(cTab_final)[4]),2) #percentage of actually good loans that are predicted as good
+
+p_back_final
+bad_final
+good_final
+```
+
+Over all Model prediction accuracy is 72.67% at threshold where profit is maximum , percentage of bad loans that are predicted as bad is 50.11% and percentage of actually good loans that are predicted as good: 78.83%.
+
+Maximum profit threshold(0.72) does not coincide with the maximum accuracy threshold(0.5)
+
+So, To maximize profits, classification threshold would be 0.72 and Overall profit would be $3,477,319.00 which is 72.67% accurate.
+
+
+***Section 8 - Conclusion***
+
+
+After performing data set cleaning ,transformtion of data, applying statistical model analysis, we were able to find best pluasible logistic regression model to predict good and bad loans and find an optimum threshold to maximise profit. 
+
+Best plausible logistic model to predict loan status(dependent variable) need following first order independent variables  amount, term , grade ,home , income , verified , reason , debtIncRat , delinq2yr , inq6mth , openAcc , revolRatio , totalAcc , totalRevLim , accOpen24 , avgBal and  totalBcLim.Maximum accuracy for this model can be achieved at 0.5 classification threshold and maximum profit can be achived at 0.72 classification threshold. 
+
+At classification threshold of 0.5 ,accuracy of model is 79.03% ,percentage of bad loans that are predicted as bad is 11.34% and percentage of good loans that are predicted as good is 97.51%.Profit at this threshold is 2,251,161 compared to current bank profit of 1,202,020 which is an 89% increase.
+
+At threshold of 0.72, accuracy of model is 72.67% ,percentage of actually bad loans that are predicted as bad is 50.11% and percentage of actually good loans that are predicted as good is 78.83%.Profit at this threshold is $3,477,319.00 compared to current bank profit 1,202,020 which is 189% increase.
+
+In conclusion we built a best model to predict loan status ,it is recomended to use 0.72 classification threshold to miaxmise profi and 0.5 classification threshold to maximise accuracy.
